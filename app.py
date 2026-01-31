@@ -1,11 +1,6 @@
 import streamlit as st
-import os
 from google import generativeai as genai
 from google.genai import types
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # --------------------------------------------------
 # App Configuration
@@ -16,16 +11,16 @@ st.set_page_config(
     layout="wide"
 )
 
-
 # --------------------------------------------------
 # Gemini Client
 # --------------------------------------------------
 def get_client():
-    api_key = os.environ.get("API_KEY")
+    api_key = st.secrets.get("API_KEY")  # Read from Streamlit Secrets
     if not api_key:
-        st.error("Missing API_KEY. Please set it in .env or environment variables.")
+        st.error("Missing API_KEY in Streamlit Secrets!")
         st.stop()
-    return genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
+    genai.configure(api_key=api_key)
+    return genai
 
 # --------------------------------------------------
 # Sidebar
@@ -33,7 +28,6 @@ def get_client():
 with st.sidebar:
     st.title("⚡ QualityStudio")
     st.caption("Gemini 3 Power Interface")
-
     st.divider()
 
     persona = st.selectbox(
@@ -51,7 +45,6 @@ with st.sidebar:
     st.subheader("Engine Settings")
     use_pro = st.toggle("Pro Reasoning (Gemini 3 Pro)", value=False)
     grounding = st.selectbox("Grounding", ["None", "Google Search", "Google Maps"])
-
     st.divider()
 
     uploaded_file = st.file_uploader(
@@ -111,7 +104,6 @@ if prompt := st.chat_input("Send a message..."):
 
             # Build content parts
             parts = []
-
             if uploaded_file:
                 uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
