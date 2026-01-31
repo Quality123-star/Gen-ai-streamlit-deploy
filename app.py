@@ -1,6 +1,6 @@
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import Part, GenerateContentConfig, ThinkingConfig, Tool, GoogleSearch, GoogleMaps
+from google.generativeai.types import Part, GenerateContentConfig, Tool, GoogleSearch, GoogleMaps
 from dotenv import load_dotenv
 
 # --------------------------------------------------
@@ -119,10 +119,7 @@ if prompt := st.chat_input("Send a message..."):
 
             config = GenerateContentConfig(
                 system_instruction=persona_map[persona],
-                tools=tools if tools else None,
-                thinking_config=ThinkingConfig(thinking_budget=4000)
-                if use_pro and grounding == "None"
-                else None
+                tools=tools if tools else None
             )
 
             try:
