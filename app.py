@@ -1,7 +1,11 @@
 import streamlit as st
-import google.generativeai as genai
-from google.generativeai.types import Part, GenerateContentConfig, Tool, GoogleSearch, GoogleMaps
+import os
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # --------------------------------------------------
 # App Configuration
@@ -12,16 +16,16 @@ st.set_page_config(
     layout="wide"
 )
 
+
 # --------------------------------------------------
 # Gemini Client
 # --------------------------------------------------
 def get_client():
-    api_key = st.secrets.get("API_KEY")  # Read from Streamlit Secrets
+    api_key = os.environ.get("API_KEY")
     if not api_key:
-        st.error("Missing API_KEY in Streamlit Secrets!")
+        st.error("Missing API_KEY. Please set it in .env or environment variables.")
         st.stop()
-    genai.configure(api_key=api_key)
-    return genai
+    return genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
 
 # --------------------------------------------------
 # Sidebar
@@ -29,6 +33,7 @@ def get_client():
 with st.sidebar:
     st.title("⚡ QualityStudio")
     st.caption("Gemini 3 Power Interface")
+
     st.divider()
 
     persona = st.selectbox(
@@ -46,6 +51,7 @@ with st.sidebar:
     st.subheader("Engine Settings")
     use_pro = st.toggle("Pro Reasoning (Gemini 3 Pro)", value=False)
     grounding = st.selectbox("Grounding", ["None", "Google Search", "Google Maps"])
+
     st.divider()
 
     uploaded_file = st.file_uploader(
@@ -99,27 +105,31 @@ if prompt := st.chat_input("Send a message..."):
             # Tools
             tools = []
             if grounding == "Google Search":
-                tools.append(Tool(google_search=GoogleSearch()))
+                tools.append(types.Tool(google_search=types.GoogleSearch()))
             elif grounding == "Google Maps":
-                tools.append(Tool(google_maps=GoogleMaps()))
+                tools.append(types.Tool(google_maps=types.GoogleMaps()))
 
             # Build content parts
             parts = []
+
             if uploaded_file:
                 uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
                 parts.append(
-                    Part.from_bytes(
+                    types.Part.from_bytes(
                         data=file_bytes,
                         mime_type=uploaded_file.type
                     )
                 )
 
-            parts.append(Part.from_text(text=prompt))
+            parts.append(types.Part.from_text(text=prompt))
 
-            config = GenerateContentConfig(
+            config = types.GenerateContentConfig(
                 system_instruction=persona_map[persona],
-                tools=tools if tools else None
+                tools=tools if tools else None,
+                thinking_config=types.ThinkingConfig(thinking_budget=4000)
+                if use_pro and grounding == "None"
+                else None
             )
 
             try:
