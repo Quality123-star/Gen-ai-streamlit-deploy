@@ -1,6 +1,7 @@
 import streamlit as st
-from google import generativeai as genai
-from google.genai import types
+import google.generativeai as genai
+from google.generativeai.types import Part, GenerateContentConfig, ThinkingConfig, Tool, GoogleSearch, GoogleMaps
+from dotenv import load_dotenv
 
 # --------------------------------------------------
 # App Configuration
@@ -98,9 +99,9 @@ if prompt := st.chat_input("Send a message..."):
             # Tools
             tools = []
             if grounding == "Google Search":
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
+                tools.append(Tool(google_search=GoogleSearch()))
             elif grounding == "Google Maps":
-                tools.append(types.Tool(google_maps=types.GoogleMaps()))
+                tools.append(Tool(google_maps=GoogleMaps()))
 
             # Build content parts
             parts = []
@@ -108,18 +109,18 @@ if prompt := st.chat_input("Send a message..."):
                 uploaded_file.seek(0)
                 file_bytes = uploaded_file.read()
                 parts.append(
-                    types.Part.from_bytes(
+                    Part.from_bytes(
                         data=file_bytes,
                         mime_type=uploaded_file.type
                     )
                 )
 
-            parts.append(types.Part.from_text(text=prompt))
+            parts.append(Part.from_text(text=prompt))
 
-            config = types.GenerateContentConfig(
+            config = GenerateContentConfig(
                 system_instruction=persona_map[persona],
                 tools=tools if tools else None,
-                thinking_config=types.ThinkingConfig(thinking_budget=4000)
+                thinking_config=ThinkingConfig(thinking_budget=4000)
                 if use_pro and grounding == "None"
                 else None
             )
