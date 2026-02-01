@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 from google import genai
 from google.genai import types
 
@@ -9,13 +8,13 @@ from google.genai import types
 st.set_page_config(
     page_title="QualityStudio | Gemini 3",
     page_icon="⚡",
-    layout="wide"
+    layout="wide",
 )
 
 # --------------------------------------------------
-# Gemini Client
+# Gemini Client (SDK-safe)
 # --------------------------------------------------
-def get_client():
+def get_client() -> genai.Client:
     api_key = st.secrets.get("API_KEY")
     if not api_key:
         st.error("Missing API_KEY in Streamlit secrets.")
@@ -23,7 +22,7 @@ def get_client():
 
     return genai.Client(
         api_key=api_key,
-        http_options={"api_version": "v1alpha"}
+        http_options={"api_version": "v1alpha"},
     )
 
 # --------------------------------------------------
@@ -37,30 +36,45 @@ with st.sidebar:
 
     persona = st.selectbox(
         "AI Personality",
-        [
+        (
             "Helpful Assistant",
             "Code Expert",
             "Creative Writer",
             "Critical Thinker",
-        ],
+        ),
     )
 
     persona_map = {
-        "Helpful Assistant": "You are a friendly, helpful AI assistant. Provide concise and accurate answers.",
-        "Code Expert": "You are a senior software engineer. Provide clean, optimized code snippets and architectural advice.",
-        "Creative Writer": "You are a Pulitzer-prize winning author. Use evocative language and storytelling.",
-        "Critical Thinker": "You are a philosopher and scientist. Break down problems logically and explore multiple perspectives.",
+        "Helpful Assistant": (
+            "You are a friendly, helpful AI assistant. "
+            "Provide concise and accurate answers."
+        ),
+        "Code Expert": (
+            "You are a senior software engineer. "
+            "Provide clean, optimized code snippets and architectural advice."
+        ),
+        "Creative Writer": (
+            "You are a Pulitzer Prize–winning author. "
+            "Use evocative language and storytelling."
+        ),
+        "Critical Thinker": (
+            "You are a philosopher and scientist. "
+            "Break down problems logically and explore multiple perspectives."
+        ),
     }
 
     st.subheader("Engine Settings")
     use_pro = st.toggle("Pro Reasoning (Gemini 3 Pro)", value=False)
-    grounding = st.selectbox("Grounding", ["None", "Google Search", "Google Maps"])
+    grounding = st.selectbox(
+        "Grounding",
+        ("None", "Google Search", "Google Maps"),
+    )
 
     st.divider()
 
     uploaded_file = st.file_uploader(
         "Multimodal Context",
-        type=["png", "jpg", "jpeg", "mp3", "wav"],
+        type=("png", "jpg", "jpeg", "mp3", "wav"),
     )
 
     if st.button("Reset Chat", use_container_width=True):
@@ -79,11 +93,14 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if msg.get("urls"):
+        urls = msg.get("urls")
+        if urls:
             st.markdown(
                 " ".join(
-                    f'<a href="{u}" target="_blank" class="source-tag">{u.split("//")[-1].split("/")[0]}</a>'
-                    for u in msg["urls"]
+                    f'<a href="{u}" target="_blank" class="source-tag">'
+                    f'{u.split("//")[-1].split("/")[0]}'
+                    "</a>"
+                    for u in urls
                 ),
                 unsafe_allow_html=True,
             )
@@ -92,7 +109,7 @@ for msg in st.session_state.messages:
 # Chat Input
 # --------------------------------------------------
 if prompt := st.chat_input("Send a message..."):
-    # User message
+    # Store user message
     st.session_state.messages.append(
         {"role": "user", "content": prompt}
     )
@@ -102,25 +119,38 @@ if prompt := st.chat_input("Send a message..."):
         if uploaded_file:
             st.caption(f"📎 Attached: {uploaded_file.name}")
 
-    # Assistant message
+    # Assistant response
     with st.chat_message("assistant"):
         with st.spinner("Thinking..." if use_pro else "Generating..."):
             client = get_client()
+
             model_id = (
                 "gemini-3-pro-preview"
                 if use_pro
                 else "gemini-3-flash-preview"
             )
 
-            # Tools
-            tools = []
+            # ------------------------------
+            # Tools (future-safe)
+            # ------------------------------
+            tools = None
             if grounding == "Google Search":
-                tools.append(types.Tool(google_search=types.GoogleSearch()))
+                tools = [
+                    types.Tool(
+                        google_search=types.GoogleSearch()
+                    )
+                ]
             elif grounding == "Google Maps":
-                tools.append(types.Tool(google_maps=types.GoogleMaps()))
+                tools = [
+                    types.Tool(
+                        google_maps=types.GoogleMaps()
+                    )
+                ]
 
-            # Build content parts
-            parts = []
+            # ------------------------------
+            # Content Parts (keyword-only)
+            # ------------------------------
+            parts: list[types.Part] = []
 
             if uploaded_file:
                 uploaded_file.seek(0)
@@ -131,14 +161,25 @@ if prompt := st.chat_input("Send a message..."):
                     )
                 )
 
-            parts.append(types.Part.from_text(prompt))
+            parts.append(
+                types.Part.from_text(
+                    text=prompt
+                )
+            )
 
+            # ------------------------------
+            # Generation Config
+            # ------------------------------
             config = types.GenerateContentConfig(
                 system_instruction=persona_map[persona],
-                tools=tools if tools else None,
-                thinking_config=types.ThinkingConfig(thinking_budget=4000)
-                if use_pro and grounding == "None"
-                else None,
+                tools=tools,
+                thinking_config=(
+                    types.ThinkingConfig(
+                        thinking_budget=4000
+                    )
+                    if use_pro and grounding == "None"
+                    else None
+                ),
             )
 
             try:
@@ -148,29 +189,47 @@ if prompt := st.chat_input("Send a message..."):
                     config=config,
                 )
 
-                # -------- Extract text safely --------
+                # ------------------------------
+                # Safe Text Extraction
+                # ------------------------------
                 text_output = ""
-                if response.candidates:
-                    for part in response.candidates[0].content.parts:
-                        if getattr(part, "text", None):
-                            text_output += part.text
+                candidates = getattr(response, "candidates", None)
+
+                if candidates:
+                    content = getattr(
+                        candidates[0], "content", None
+                    )
+                    if content and content.parts:
+                        for part in content.parts:
+                            text = getattr(part, "text", None)
+                            if text:
+                                text_output += text
 
                 if not text_output:
                     text_output = "_No textual response returned._"
 
                 st.markdown(text_output)
 
-                # -------- Extract grounding URLs --------
+                # ------------------------------
+                # Safe Grounding URLs
+                # ------------------------------
                 urls = []
-                candidate = response.candidates[0]
-                grounding_meta = getattr(candidate, "grounding_metadata", None)
+                grounding_meta = getattr(
+                    candidates[0], "grounding_metadata", None
+                ) if candidates else None
 
-                if grounding_meta and grounding_meta.grounding_chunks:
-                    for chunk in grounding_meta.grounding_chunks:
-                        if chunk.web:
-                            urls.append(chunk.web.uri)
-                        if chunk.maps:
-                            urls.append(chunk.maps.uri)
+                if grounding_meta:
+                    chunks = getattr(
+                        grounding_meta, "grounding_chunks", None
+                    )
+                    if chunks:
+                        for chunk in chunks:
+                            web = getattr(chunk, "web", None)
+                            maps = getattr(chunk, "maps", None)
+                            if web and getattr(web, "uri", None):
+                                urls.append(web.uri)
+                            if maps and getattr(maps, "uri", None):
+                                urls.append(maps.uri)
 
                 st.session_state.messages.append(
                     {
