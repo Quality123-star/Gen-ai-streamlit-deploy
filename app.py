@@ -2,10 +2,6 @@ import streamlit as st
 import os
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
 
 # --------------------------------------------------
 # App Configuration
@@ -16,16 +12,19 @@ st.set_page_config(
     layout="wide"
 )
 
-
 # --------------------------------------------------
 # Gemini Client
 # --------------------------------------------------
 def get_client():
-    api_key = os.environ.get("API_KEY")
+    api_key = st.secrets.get("API_KEY")
     if not api_key:
-        st.error("Missing API_KEY. Please set it in .env or environment variables.")
+        st.error("Missing API_KEY in Streamlit secrets.")
         st.stop()
-    return genai.Client(api_key=api_key, http_options={"api_version": "v1alpha"})
+
+    return genai.Client(
+        api_key=api_key,
+        http_options={"api_version": "v1alpha"}
+    )
 
 # --------------------------------------------------
 # Sidebar
@@ -38,14 +37,19 @@ with st.sidebar:
 
     persona = st.selectbox(
         "AI Personality",
-        ["Helpful Assistant", "Code Expert", "Creative Writer", "Critical Thinker"]
+        [
+            "Helpful Assistant",
+            "Code Expert",
+            "Creative Writer",
+            "Critical Thinker",
+        ],
     )
 
     persona_map = {
         "Helpful Assistant": "You are a friendly, helpful AI assistant. Provide concise and accurate answers.",
         "Code Expert": "You are a senior software engineer. Provide clean, optimized code snippets and architectural advice.",
         "Creative Writer": "You are a Pulitzer-prize winning author. Use evocative language and storytelling.",
-        "Critical Thinker": "You are a philosopher and scientist. Break down problems logically and explore multiple perspectives."
+        "Critical Thinker": "You are a philosopher and scientist. Break down problems logically and explore multiple perspectives.",
     }
 
     st.subheader("Engine Settings")
@@ -56,7 +60,7 @@ with st.sidebar:
 
     uploaded_file = st.file_uploader(
         "Multimodal Context",
-        type=["png", "jpg", "jpeg", "mp3", "wav"]
+        type=["png", "jpg", "jpeg", "mp3", "wav"],
     )
 
     if st.button("Reset Chat", use_container_width=True):
@@ -81,7 +85,7 @@ for msg in st.session_state.messages:
                     f'<a href="{u}" target="_blank" class="source-tag">{u.split("//")[-1].split("/")[0]}</a>'
                     for u in msg["urls"]
                 ),
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
 
 # --------------------------------------------------
@@ -89,7 +93,9 @@ for msg in st.session_state.messages:
 # --------------------------------------------------
 if prompt := st.chat_input("Send a message..."):
     # User message
-    st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append(
+        {"role": "user", "content": prompt}
+    )
 
     with st.chat_message("user"):
         st.markdown(prompt)
@@ -100,7 +106,11 @@ if prompt := st.chat_input("Send a message..."):
     with st.chat_message("assistant"):
         with st.spinner("Thinking..." if use_pro else "Generating..."):
             client = get_client()
-            model_id = "gemini-3-pro-preview" if use_pro else "gemini-3-flash-preview"
+            model_id = (
+                "gemini-3-pro-preview"
+                if use_pro
+                else "gemini-3-flash-preview"
+            )
 
             # Tools
             tools = []
@@ -114,36 +124,35 @@ if prompt := st.chat_input("Send a message..."):
 
             if uploaded_file:
                 uploaded_file.seek(0)
-                file_bytes = uploaded_file.read()
                 parts.append(
                     types.Part.from_bytes(
-                        data=file_bytes,
-                        mime_type=uploaded_file.type
+                        data=uploaded_file.read(),
+                        mime_type=uploaded_file.type,
                     )
                 )
 
-            parts.append(types.Part.from_text(text=prompt))
+            parts.append(types.Part.from_text(prompt))
 
             config = types.GenerateContentConfig(
                 system_instruction=persona_map[persona],
                 tools=tools if tools else None,
                 thinking_config=types.ThinkingConfig(thinking_budget=4000)
                 if use_pro and grounding == "None"
-                else None
+                else None,
             )
 
             try:
                 response = client.models.generate_content(
                     model=model_id,
                     contents=parts,
-                    config=config
+                    config=config,
                 )
 
                 # -------- Extract text safely --------
                 text_output = ""
                 if response.candidates:
                     for part in response.candidates[0].content.parts:
-                        if hasattr(part, "text") and part.text:
+                        if getattr(part, "text", None):
                             text_output += part.text
 
                 if not text_output:
@@ -151,7 +160,7 @@ if prompt := st.chat_input("Send a message..."):
 
                 st.markdown(text_output)
 
-                # -------- Extract grounding links safely --------
+                # -------- Extract grounding URLs --------
                 urls = []
                 candidate = response.candidates[0]
                 grounding_meta = getattr(candidate, "grounding_metadata", None)
@@ -163,14 +172,13 @@ if prompt := st.chat_input("Send a message..."):
                         if chunk.maps:
                             urls.append(chunk.maps.uri)
 
-                final_urls = list(set(urls))
-
-                # -------- Save assistant message ONCE --------
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": text_output,
-                    "urls": final_urls if final_urls else None
-                })
+                st.session_state.messages.append(
+                    {
+                        "role": "assistant",
+                        "content": text_output,
+                        "urls": list(set(urls)) if urls else None,
+                    }
+                )
 
             except Exception as e:
                 st.error(f"Error: {e}")
